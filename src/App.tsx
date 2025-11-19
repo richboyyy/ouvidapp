@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO DO FIREBASE ---
-// Suas chaves já estão configuradas aqui.
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
@@ -44,7 +43,7 @@ const firebaseConfig = {
 };
 
 // Inicialização segura
-let db;
+let db: any;
 try {
   if (firebaseConfig.apiKey) {
     const app = initializeApp(firebaseConfig);
@@ -54,36 +53,54 @@ try {
   console.error("Erro ao inicializar Firebase:", error);
 }
 
+// --- Interfaces (Isso corrige os erros do Vercel) ---
+interface Manifestation {
+  id: string;
+  nup: string;
+  title: string;
+  description: string;
+  origin: string;
+  responsible: string;
+  status: string;
+  date: string;
+  createdAt?: any;
+}
+
+interface BadgeProps {
+  status?: string;
+  origin?: string;
+}
+
 // --- Componentes Visuais ---
 
-const StatusBadge = ({ status }) => {
-  const styles = {
+const StatusBadge = ({ status }: BadgeProps) => {
+  const styles: any = {
     'Aberto': 'bg-red-100 text-red-700 border border-red-200',
     'Em Andamento': 'bg-yellow-100 text-yellow-800 border border-yellow-200',
     'Fechado': 'bg-green-100 text-green-700 border border-green-200',
     'Aguardando Resposta': 'bg-blue-100 text-blue-700 border border-blue-200',
   };
   return (
-    <span className={`px-3 py-1 rounded-full text-xs font-bold ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
+    <span className={`px-3 py-1 rounded-full text-xs font-bold ${styles[status || ''] || 'bg-gray-100 text-gray-700'}`}>
       {status}
     </span>
   );
 };
 
-const OriginBadge = ({ origin }) => {
-  const styles = {
+const OriginBadge = ({ origin }: BadgeProps) => {
+  const styles: any = {
     'SEI': 'bg-blue-50 text-blue-600 border border-blue-200',
     'Fala.Br': 'bg-green-50 text-green-600 border border-green-200',
     'SAT': 'bg-purple-50 text-purple-600 border border-purple-200',
   };
   return (
-    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${styles[origin] || 'bg-gray-100'}`}>
+    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${styles[origin || ''] || 'bg-gray-100'}`}>
       {origin}
     </span>
   );
 };
 
-const StatCard = ({ title, value, icon: Icon, color }) => (
+const StatCard = ({ title, value, icon: Icon, color }: any) => (
   <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center space-x-4 transition-transform hover:scale-105">
     <div className={`p-3 rounded-lg ${color} shadow-sm`}>
       <Icon className="w-6 h-6 text-white" />
@@ -99,12 +116,12 @@ const StatCard = ({ title, value, icon: Icon, color }) => (
 
 export default function OuvidApp() {
   const [currentView, setCurrentView] = useState('dashboard');
-  const [manifestations, setManifestations] = useState([]); 
+  // AQUI ESTAVA O ERRO: Agora definimos que é uma lista de Manifestation
+  const [manifestations, setManifestations] = useState<Manifestation[]>([]); 
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isConnected, setIsConnected] = useState(false); // Novo estado para conexão
+  const [isConnected, setIsConnected] = useState(false);
   
-  // Estado do Formulário
   const [formData, setFormData] = useState({
     nup: '',
     title: '',
@@ -122,31 +139,26 @@ export default function OuvidApp() {
       return;
     }
 
-    // Escuta o banco de dados em tempo real
     const q = query(collection(db, "manifestacoes"), orderBy("createdAt", "desc"));
     
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const docs = [];
-      querySnapshot.forEach((doc) => {
+    const unsubscribe = onSnapshot(q, (querySnapshot: any) => {
+      const docs: Manifestation[] = [];
+      querySnapshot.forEach((doc: any) => {
         docs.push({ ...doc.data(), id: doc.id });
       });
       setManifestations(docs);
       setLoading(false);
-      setIsConnected(true); // Se chegou aqui, conectou com sucesso!
-    }, (error) => {
+      setIsConnected(true);
+    }, (error: any) => {
       console.error("Erro de conexão:", error);
       setIsConnected(false);
       setLoading(false);
-      // Se der erro de permissão, avisa o usuário
-      if (error.code === 'permission-denied') {
-        alert("Erro de Permissão: Verifique se as Regras do Firestore estão em 'Modo de Teste' ou públicas.");
-      }
     });
 
     return () => unsubscribe();
   }, []);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!db) return;
 
@@ -162,11 +174,11 @@ export default function OuvidApp() {
       alert("✅ Salvo no Banco de Dados!"); 
     } catch (e) {
       console.error("Erro ao adicionar: ", e);
-      alert("Erro ao salvar. Verifique a aba 'Regras' no Firebase.");
+      alert("Erro ao salvar.");
     }
   };
 
-  const handleDelete = async (id, e) => {
+  const handleDelete = async (id: string, e: any) => {
     e.stopPropagation();
     if (!db) return;
     if (window.confirm("Tem certeza que deseja excluir este registro?")) {
@@ -180,7 +192,7 @@ export default function OuvidApp() {
 
   // --- Navegação e Filtros ---
 
-  const navigateTo = (view) => setCurrentView(view);
+  const navigateTo = (view: string) => setCurrentView(view);
 
   const stats = useMemo(() => {
     return {
@@ -197,7 +209,7 @@ export default function OuvidApp() {
     (item.responsible?.toLowerCase() || '').includes(searchTerm.toLowerCase())
   );
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: any) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
@@ -244,17 +256,16 @@ export default function OuvidApp() {
         </nav>
 
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
-          {/* Indicador de Status do Banco de Dados */}
           <div className="flex items-center justify-center space-x-2 mb-2 bg-white p-2 rounded-lg border border-gray-200">
              {isConnected ? (
                <>
                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                 <span className="text-xs font-bold text-green-700">Banco de Dados Online</span>
+                 <span className="text-xs font-bold text-green-700">Online</span>
                </>
              ) : (
                <>
                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                 <span className="text-xs font-bold text-red-700">Desconectado</span>
+                 <span className="text-xs font-bold text-red-700">Offline</span>
                </>
              )}
           </div>
@@ -268,17 +279,6 @@ export default function OuvidApp() {
       {/* Área Principal */}
       <main className="flex-1 overflow-y-auto p-4 md:p-8 ml-0 md:ml-64">
         
-        {/* Alerta de Erro de Conexão */}
-        {!isConnected && !loading && (
-          <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded shadow-sm flex items-center gap-3" role="alert">
-            <WifiOff className="w-6 h-6" />
-            <div>
-              <p className="font-bold">Sem conexão com o Banco de Dados</p>
-              <p className="text-sm">Verifique se o banco foi criado no Modo de Teste ou se as Regras permitem leitura/escrita.</p>
-            </div>
-          </div>
-        )}
-
         {/* Cabeçalho Mobile */}
         <div className="md:hidden mb-6 flex items-center justify-between">
            <div className="flex items-center space-x-2">
@@ -301,7 +301,7 @@ export default function OuvidApp() {
             {loading ? (
               <div className="flex flex-col items-center justify-center p-20 space-y-4">
                 <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-                <p className="text-gray-500">Sincronizando com o Firebase...</p>
+                <p className="text-gray-500">Carregando...</p>
               </div>
             ) : (
               <>
@@ -341,15 +341,7 @@ export default function OuvidApp() {
                         {manifestations.length === 0 && (
                           <tr>
                             <td colSpan={5} className="px-6 py-12 text-center text-gray-400">
-                              <div className="flex flex-col items-center gap-3">
-                                <div className="p-4 bg-gray-50 rounded-full">
-                                  <FileText className="w-8 h-8 text-gray-300" />
-                                </div>
-                                <p>O banco de dados está vazio.</p>
-                                <button onClick={() => navigateTo('form')} className="text-indigo-600 font-semibold hover:underline">
-                                  Clique aqui para criar o primeiro registro
-                                </button>
-                              </div>
+                              Vazio
                             </td>
                           </tr>
                         )}
@@ -368,7 +360,7 @@ export default function OuvidApp() {
             <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">Manifestações</h2>
-                <p className="text-gray-500">{filteredList.length} registros encontrados</p>
+                <p className="text-gray-500">{filteredList.length} registros</p>
               </div>
               <div className="flex gap-2">
                  <button className="px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 flex items-center gap-2 shadow-sm font-medium">
@@ -387,7 +379,7 @@ export default function OuvidApp() {
               <Search className="w-5 h-5 text-gray-400 ml-2" />
               <input 
                 type="text"
-                placeholder="Buscar por NUP, título ou responsável..."
+                placeholder="Buscar..."
                 className="flex-1 p-2 outline-none text-gray-700 bg-transparent"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -445,7 +437,7 @@ export default function OuvidApp() {
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">Nova Manifestação</h2>
-                <p className="text-gray-500">Preencha os dados para registrar</p>
+                <p className="text-gray-500">Preencha os dados</p>
               </div>
               <button onClick={() => navigateTo('dashboard')} className="text-gray-600 hover:bg-gray-100 px-4 py-2 rounded-lg border border-gray-200 bg-white transition-colors font-medium">
                 Cancelar
@@ -460,7 +452,7 @@ export default function OuvidApp() {
                 
                 <div className="space-y-5">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">NUP (Número do Processo) <span className="text-red-500">*</span></label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">NUP <span className="text-red-500">*</span></label>
                     <input 
                       required
                       name="nup"
@@ -478,7 +470,7 @@ export default function OuvidApp() {
                       name="title"
                       value={formData.title}
                       onChange={handleInputChange}
-                      placeholder="Descreva brevemente o assunto" 
+                      placeholder="Assunto" 
                       className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 focus:bg-white"
                     />
                   </div>
@@ -491,7 +483,7 @@ export default function OuvidApp() {
                       value={formData.description}
                       onChange={handleInputChange}
                       rows={4}
-                      placeholder="Detalhamento completo da manifestação..." 
+                      placeholder="Detalhamento..." 
                       className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 focus:bg-white"
                     />
                   </div>
@@ -523,7 +515,7 @@ export default function OuvidApp() {
                           name="responsible"
                           value={formData.responsible}
                           onChange={handleInputChange}
-                          placeholder="Nome do responsável" 
+                          placeholder="Nome" 
                           className="w-full pl-10 p-3 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 focus:bg-white"
                         />
                       </div>
@@ -549,7 +541,7 @@ export default function OuvidApp() {
                    Cancelar
                  </button>
                  <button type="submit" className="px-8 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transform active:scale-95 transition-all">
-                   Salvar Manifestação
+                   Salvar
                  </button>
               </div>
             </form>
