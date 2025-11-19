@@ -13,9 +13,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  Trash2,
-  Wifi,
-  WifiOff
+  Trash2
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO DO FIREBASE ---
