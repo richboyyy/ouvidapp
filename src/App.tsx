@@ -13,7 +13,9 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  Trash2
+  Trash2,
+  LogOut,
+  Lock
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO DO FIREBASE ---
@@ -29,6 +31,12 @@ import {
   doc,
   serverTimestamp 
 } from 'firebase/firestore';
+import { 
+  getAuth, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged 
+} from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAa5xou6StKEAweWFk6T4WXF4xRFYp98tU",
@@ -42,16 +50,19 @@ const firebaseConfig = {
 
 // Inicialização segura
 let db: any;
+let auth: any;
+
 try {
   if (firebaseConfig.apiKey) {
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
+    auth = getAuth(app);
   }
 } catch (error) {
   console.error("Erro ao inicializar Firebase:", error);
 }
 
-// --- Interfaces (Isso corrige os erros do Vercel) ---
+// --- Interfaces ---
 interface Manifestation {
   id: string;
   nup: string;
@@ -110,11 +121,96 @@ const StatCard = ({ title, value, icon: Icon, color }: any) => (
   </div>
 );
 
+// --- TELA DE LOGIN ---
+const LoginScreen = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    
+    if (!auth) {
+      setError('Erro de configuração do Firebase.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err: any) {
+      console.error(err);
+      setError('Email ou senha incorretos. Verifique no Firebase Authentication.');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-200">
+        <div className="flex flex-col items-center mb-8">
+          <div className="bg-indigo-600 p-3 rounded-xl shadow-lg shadow-indigo-200 mb-4">
+            <Lock className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800">Acesso OuvidApp</h1>
+          <p className="text-gray-500 text-center mt-2">Entre com as credenciais da equipe para acessar o sistema.</p>
+        </div>
+
+        <form onSubmit={handleLogin} className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+            <input 
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+              placeholder="ex: equipe@ouvidapp.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Senha</label>
+            <input 
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+              placeholder="Sua senha"
+            />
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-200 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" /> {error}
+            </div>
+          )}
+
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-70"
+          >
+            {loading ? 'Entrando...' : 'Acessar Sistema'}
+          </button>
+        </form>
+        <p className="text-xs text-gray-400 text-center mt-6">
+          Se não tiver acesso, contate o administrador do sistema.
+        </p>
+      </div>
+    </div>
+  );
+};
+
 // --- App Principal ---
 
 export default function OuvidApp() {
+  const [user, setUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [currentView, setCurrentView] = useState('dashboard');
-  // AQUI ESTAVA O ERRO: Agora definimos que é uma lista de Manifestation
   const [manifestations, setManifestations] = useState<Manifestation[]>([]); 
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -129,10 +225,23 @@ export default function OuvidApp() {
     status: 'Aberto'
   });
 
-  // --- Lógica do Firebase ---
+  // --- Auth Listener ---
+  useEffect(() => {
+    if (!auth) {
+      setAuthLoading(false);
+      return;
+    }
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // --- Lógica do Firebase Data ---
 
   useEffect(() => {
-    if (!db) {
+    if (!db || !user) { // Só carrega dados se tiver usuário logado
       setLoading(false);
       return;
     }
@@ -154,7 +263,43 @@ export default function OuvidApp() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user]); // Recarrega se o usuário mudar
+
+  // --- FUNÇÃO EXPORTAR EXCEL (CSV) ---
+  const exportToExcel = () => {
+    if (manifestations.length === 0) {
+      alert("Não há dados para exportar.");
+      return;
+    }
+
+    // Cabeçalho do CSV
+    const headers = ["NUP,Título,Origem,Status,Responsável,Data,Descrição"];
+    
+    // Linhas de dados
+    const rows = manifestations.map(m => {
+      // Tratamento para evitar que vírgulas no texto quebrem o CSV
+      const cleanDescription = (m.description || '').replace(/(\r\n|\n|\r)/gm, " ").replace(/"/g, '""');
+      const cleanTitle = (m.title || '').replace(/,/g, " ");
+      
+      return `${m.nup},"${cleanTitle}",${m.origin},${m.status},${m.responsible},${m.date},"${cleanDescription}"`;
+    });
+
+    const csvContent = [headers, ...rows].join("\n");
+    
+    // Criação do arquivo para download
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `manifestacoes_ouvidapp_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleLogout = () => {
+    if (auth) signOut(auth);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,8 +333,6 @@ export default function OuvidApp() {
     }
   };
 
-  // --- Navegação e Filtros ---
-
   const navigateTo = (view: string) => setCurrentView(view);
 
   const stats = useMemo(() => {
@@ -212,6 +355,13 @@ export default function OuvidApp() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  // Se estiver carregando autenticação, mostra tela branca
+  if (authLoading) return <div className="h-screen flex items-center justify-center">Carregando sistema...</div>;
+
+  // Se não tiver usuário, mostra tela de Login
+  if (!user) return <LoginScreen />;
+
+  // Se logado, mostra o App
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-800">
       {/* Menu Lateral */}
@@ -254,23 +404,16 @@ export default function OuvidApp() {
         </nav>
 
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
-          <div className="flex items-center justify-center space-x-2 mb-2 bg-white p-2 rounded-lg border border-gray-200">
-             {isConnected ? (
-               <>
-                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                 <span className="text-xs font-bold text-green-700">Online</span>
-               </>
-             ) : (
-               <>
-                 <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                 <span className="text-xs font-bold text-red-700">Offline</span>
-               </>
-             )}
+          <div className="mb-4 flex items-center gap-2 px-2 text-sm text-gray-600">
+            <User className="w-4 h-4" />
+            <span className="truncate w-32">{user.email}</span>
           </div>
-          <div className="text-xs text-gray-400 text-center">
-            <p className="font-semibold">OuvidApp v1.0</p>
-            <p>Conectado ao Firebase</p>
-          </div>
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors text-sm font-medium"
+          >
+            <LogOut className="w-4 h-4" /> Sair
+          </button>
         </div>
       </aside>
 
@@ -285,7 +428,10 @@ export default function OuvidApp() {
             </div>
             <h1 className="text-xl font-bold text-gray-800">OuvidApp</h1>
           </div>
-          <button className="p-2 text-gray-600"><Menu className="w-6 h-6" /></button>
+          <div className="flex gap-2">
+            <button onClick={handleLogout} className="p-2 text-red-600"><LogOut className="w-6 h-6" /></button>
+            <button className="p-2 text-gray-600"><Menu className="w-6 h-6" /></button>
+          </div>
         </div>
 
         {/* --- DASHBOARD --- */}
@@ -299,7 +445,7 @@ export default function OuvidApp() {
             {loading ? (
               <div className="flex flex-col items-center justify-center p-20 space-y-4">
                 <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-                <p className="text-gray-500">Carregando...</p>
+                <p className="text-gray-500">Carregando dados...</p>
               </div>
             ) : (
               <>
@@ -364,7 +510,8 @@ export default function OuvidApp() {
                  <button className="px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 flex items-center gap-2 shadow-sm font-medium">
                    <Filter className="w-4 h-4" /> Filtros
                  </button>
-                 <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm shadow-green-200 font-medium transition-colors">
+                 {/* BOTÃO EXCEL FUNCIONANDO AGORA */}
+                 <button onClick={exportToExcel} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm shadow-green-200 font-medium transition-colors">
                    <Download className="w-4 h-4" /> Excel
                  </button>
                  <button onClick={() => navigateTo('form')} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 shadow-sm shadow-indigo-200 font-medium transition-colors">
