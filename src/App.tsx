@@ -214,7 +214,6 @@ export default function OuvidApp() {
   const [manifestations, setManifestations] = useState<Manifestation[]>([]); 
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isConnected, setIsConnected] = useState(false);
   
   const [formData, setFormData] = useState({
     nup: '',
@@ -255,10 +254,8 @@ export default function OuvidApp() {
       });
       setManifestations(docs);
       setLoading(false);
-      setIsConnected(true);
     }, (error: any) => {
       console.error("Erro de conexão:", error);
-      setIsConnected(false);
       setLoading(false);
     });
 
