@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -15,7 +15,6 @@ import {
   Trash2,
   LogOut,
   Lock,
-  Calendar,
   MessageSquare,
   Send,
   History,
@@ -114,11 +113,6 @@ interface Manifestation {
   deadline?: string; 
   createdAt?: any;
   timeline?: TimelineEvent[];
-}
-
-interface BadgeProps {
-  status?: string;
-  origin?: string;
 }
 
 interface SystemUser {
@@ -503,7 +497,27 @@ export default function OuvidApp() {
     }
   };
 
-  const navigateTo = (view: string) => setCurrentView(view);
+  const exportToExcel = () => {
+    if (manifestations.length === 0) {
+      alert("Não há dados para exportar.");
+      return;
+    }
+    const headers = ["NUP,Título,Origem,Status,Responsável,Data,Descrição"];
+    const rows = manifestations.map(m => {
+      const cleanDescription = (m.description || '').replace(/(\r\n|\n|\r)/gm, " ").replace(/"/g, '""');
+      const cleanTitle = (m.title || '').replace(/,/g, " ");
+      return `${m.nup},"${cleanTitle}",${m.origin},${m.status},${m.responsible},${m.date},"${cleanDescription}"`;
+    });
+    const csvContent = [headers, ...rows].join("\n");
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `manifestacoes_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // --- CALCULOS ---
   const stats = {
@@ -513,16 +527,14 @@ export default function OuvidApp() {
     concluidas: manifestations.filter(m => m.status === 'Fechado').length,
   };
 
-  // Dados para o Gráfico de Status
   const pieData = [
     { name: 'Aberto', value: stats.abertas, color: '#ef4444' },
     { name: 'Andamento', value: stats.andamento, color: '#eab308' },
     { name: 'Fechado', value: stats.concluidas, color: '#22c55e' },
   ].filter(d => d.value > 0);
 
-  // Ordena as manifestações por prazo (data) para o widget de tabela
   const sortedByDeadline = [...manifestations]
-    .filter(m => m.deadline && m.status !== 'Fechado') // Só mostra o que tem prazo e não tá fechado
+    .filter(m => m.deadline && m.status !== 'Fechado') 
     .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
 
   const barData = [
@@ -552,7 +564,6 @@ export default function OuvidApp() {
           </button>
           <div className="pt-4"><button onClick={() => setCurrentView('form')} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-xl shadow-lg active:scale-95 transition-all"><Plus className="w-5 h-5" /> Nova</button></div>
           
-          {/* NOVA ABA CONFIGURAÇÕES */}
           {userRole === 'admin' && (
             <button onClick={() => setCurrentView('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all mt-2 ${currentView === 'settings' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}>
               <Settings className="w-5 h-5" /> Configurações
@@ -588,7 +599,6 @@ export default function OuvidApp() {
                     <StatCard title="Concluídas" value={stats.concluidas} icon={CheckCircle2} color="bg-green-500" />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-                    {/* Gráfico de Status */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-96">
                       <h3 className="font-bold text-gray-700 mb-4">Status Geral</h3>
                       <ResponsiveContainer width="100%" height="100%">
@@ -602,7 +612,6 @@ export default function OuvidApp() {
                       </ResponsiveContainer>
                     </div>
 
-                    {/* NOVA TABELA DE PRAZOS */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-96 flex flex-col">
                       <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Clock className="w-4 h-4" /> Prazos a Vencer</h3>
                       <div className="flex-1 overflow-y-auto pr-2">
@@ -639,7 +648,6 @@ export default function OuvidApp() {
                       </div>
                     </div>
 
-                    {/* Gráfico de Origem */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-96">
                       <h3 className="font-bold text-gray-700 mb-4">Origem</h3>
                       <ResponsiveContainer width="100%" height="100%">
@@ -663,6 +671,12 @@ export default function OuvidApp() {
               <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-gray-900">Manifestações</h2>
                 <div className="flex gap-2">
+                  <button className="px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 flex items-center gap-2 shadow-sm font-medium">
+                     <Filter className="w-4 h-4" /> Filtros
+                   </button>
+                   <button onClick={exportToExcel} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm shadow-green-200 font-medium transition-colors">
+                     <Download className="w-4 h-4" /> Excel
+                   </button>
                   <button onClick={() => setCurrentView('form')} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium flex items-center gap-2"><Plus className="w-4 h-4" /> Nova</button>
                 </div>
               </div>
@@ -701,11 +715,9 @@ export default function OuvidApp() {
             </div>
           )}
 
-          {/* NOVA ABA CONFIGURAÇÕES */}
           {currentView === 'settings' && (
             <div className="space-y-6 animate-in fade-in duration-500 w-full">
               <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Settings className="w-6 h-6" /> Configurações do Sistema</h2>
-              
               <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
                 <h3 className="font-bold text-gray-800 mb-4">Usuários Cadastrados</h3>
                 <div className="overflow-x-auto">
@@ -748,15 +760,9 @@ export default function OuvidApp() {
                     <label className="text-xs text-gray-500 mb-1 block">Prazo Limite (SLA)</label>
                     <input type="date" className="w-full p-3 border rounded-lg" value={formData.deadline} onChange={e => setFormData({...formData, deadline: e.target.value})} />
                   </div>
-                  
-                  {/* NOVO SELECT DE RESPONSÁVEL */}
                   <div className="w-1/2">
                     <label className="text-xs text-gray-500 mb-1 block">Responsável</label>
-                    <select 
-                      className="w-full p-3 border rounded-lg bg-white" 
-                      value={formData.responsible} 
-                      onChange={e => setFormData({...formData, responsible: e.target.value})}
-                    >
+                    <select className="w-full p-3 border rounded-lg bg-white" value={formData.responsible} onChange={e => setFormData({...formData, responsible: e.target.value})}>
                       <option value="">Selecione...</option>
                       {systemUsers.map(u => (
                         <option key={u.id} value={getUserDisplay(u.email)}>
@@ -782,7 +788,6 @@ export default function OuvidApp() {
 
           {currentView === 'details' && selectedManifestation && (
             <div className="h-full w-full flex flex-col overflow-hidden">
-              {/* Cabeçalho de Detalhes REUTILIZADO DA VERSÃO ANTERIOR para manter consistência */}
               <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shrink-0">
                 <div className="flex items-center gap-4">
                   <button onClick={() => setCurrentView('list')} className="p-2 hover:bg-gray-100 rounded-full">
