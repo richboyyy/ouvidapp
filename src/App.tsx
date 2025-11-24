@@ -25,11 +25,12 @@ import {
   ChevronRight,
   AlertTriangle,
   UserCog,
-  UserPlus
+  UserPlus,
+  Settings
 } from 'lucide-react';
 
 // --- BIBLIOTECAS DE GRÁFICOS E PDF ---
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend,
@@ -51,7 +52,8 @@ import {
   updateDoc,
   arrayUnion,
   setDoc,
-  getDoc
+  getDoc,
+  getDocs
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -109,7 +111,7 @@ interface Manifestation {
   responsible: string;
   status: string;
   date: string;
-  deadline?: string;
+  deadline?: string; 
   createdAt?: any;
   timeline?: TimelineEvent[];
 }
@@ -119,6 +121,13 @@ interface BadgeProps {
   origin?: string;
 }
 
+interface SystemUser {
+  id: string;
+  email: string;
+  role: string;
+  username?: string;
+}
+
 // --- COMPONENTES AUXILIARES ---
 
 const getDeadlineStatus = (deadline?: string, status?: string) => {
@@ -126,13 +135,13 @@ const getDeadlineStatus = (deadline?: string, status?: string) => {
   
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const deadlineDate = new Date(deadline + 'T00:00:00');
+  const deadlineDate = new Date(deadline + 'T00:00:00'); 
   
   const diffTime = deadlineDate.getTime() - today.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) return { color: 'bg-red-100 text-red-700 border-red-200', label: 'Atrasado', icon: AlertCircle, key: 'expired' };
-  if (diffDays <= 3) return { color: 'bg-orange-100 text-orange-700 border-orange-200', label: 'Vence logo', icon: AlertTriangle, key: 'warning' };
+  if (diffDays <= 3) return { color: 'bg-orange-100 text-orange-700 border-orange-200', label: 'Atenção', icon: AlertTriangle, key: 'warning' };
   return { color: 'bg-green-100 text-green-700 border-green-200', label: 'No prazo', icon: CheckCircle2, key: 'ok' };
 };
 
@@ -178,10 +187,12 @@ const StatCard = ({ title, value, icon: Icon, color }: any) => (
 // --- TELA DE LOGIN / CADASTRO ---
 const LoginScreen = () => {
   const [isRegistering, setIsRegistering] = useState(false); 
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState(''); 
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const FAKE_DOMAIN = "@ouvidapp.local";
 
   const handleAuthAction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,25 +205,27 @@ const LoginScreen = () => {
       return;
     }
 
+    const emailCompleto = username.trim().toLowerCase() + FAKE_DOMAIN;
+
     try {
       if (isRegistering) {
-        // CADASTRO
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const userCredential = await createUserWithEmailAndPassword(auth, emailCompleto, password);
         if (db) {
           await setDoc(doc(db, 'users', userCredential.user.uid), { 
-            email: email, 
+            email: emailCompleto, 
+            username: username, 
             role: 'user' 
           });
         }
       } else {
-        // LOGIN
-        await signInWithEmailAndPassword(auth, email, password);
+        await signInWithEmailAndPassword(auth, emailCompleto, password);
       }
     } catch (err: any) {
       console.error(err);
-      if (err.code === 'auth/email-already-in-use') setError('Este email já está cadastrado.');
+      if (err.code === 'auth/email-already-in-use') setError('Este usuário já existe.');
       else if (err.code === 'auth/weak-password') setError('A senha deve ter pelo menos 6 caracteres.');
-      else setError('Email ou senha incorretos.');
+      else if (err.code === 'auth/invalid-email') setError('Nome de usuário inválido.');
+      else setError('Usuário ou senha incorretos.');
     }
     setLoading(false);
   };
@@ -228,21 +241,24 @@ const LoginScreen = () => {
             {isRegistering ? 'Criar Nova Conta' : 'Acesso OuvidApp'}
           </h1>
           <p className="text-gray-500 text-center mt-2">
-            {isRegistering ? 'Cadastre-se para acessar o sistema' : 'Entre com suas credenciais'}
+            {isRegistering ? 'Crie seu usuário para acessar' : 'Entre com seu usuário e senha'}
           </p>
         </div>
 
         <form onSubmit={handleAuthAction} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
-            <input 
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-              placeholder="seu@email.com"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Usuário</label>
+            <div className="relative">
+                <User className="w-5 h-5 absolute left-3 top-3 text-gray-400" />
+                <input 
+                type="text"
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value.replace(/\s/g, ''))}
+                className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                placeholder="ex: ricardo"
+                />
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Senha</label>
@@ -267,7 +283,7 @@ const LoginScreen = () => {
             disabled={loading}
             className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-70"
           >
-            {loading ? 'Processando...' : (isRegistering ? 'Criar Conta' : 'Acessar Sistema')}
+            {loading ? 'Processando...' : (isRegistering ? 'Criar Conta' : 'Entrar')}
           </button>
         </form>
 
@@ -277,9 +293,9 @@ const LoginScreen = () => {
             className="text-indigo-600 hover:text-indigo-800 text-sm font-medium flex items-center justify-center gap-2 w-full"
           >
             {isRegistering ? (
-              <>Já tem uma conta? Faça login</>
+              <>Já tem usuário? Faça login</>
             ) : (
-              <><UserPlus className="w-4 h-4" /> Não tem conta? Crie uma agora</>
+              <><UserPlus className="w-4 h-4" /> Criar novo usuário</>
             )}
           </button>
         </div>
@@ -305,6 +321,8 @@ export default function OuvidApp() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
+  const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]); 
+
   const [formData, setFormData] = useState({
     nup: '',
     title: '',
@@ -314,6 +332,10 @@ export default function OuvidApp() {
     status: 'Aberto',
     deadline: ''
   });
+
+  const getUserDisplay = (email: string) => {
+      return email ? email.split('@')[0] : 'Usuário';
+  }
 
   // --- AUTH & PERMISSÕES ---
   useEffect(() => {
@@ -353,6 +375,20 @@ export default function OuvidApp() {
     });
   }, [user]);
 
+  // Carregar Usuários do Sistema
+  useEffect(() => {
+    if (!db) return;
+    const fetchUsers = async () => {
+      const querySnapshot = await getDocs(collection(db, "users"));
+      const usersList: SystemUser[] = [];
+      querySnapshot.forEach((doc) => {
+        usersList.push({ id: doc.id, ...doc.data() } as SystemUser);
+      });
+      setSystemUsers(usersList);
+    };
+    fetchUsers();
+  }, [user]); 
+
   useEffect(() => {
     if (!db || !selectedManifestation) {
       setComments([]);
@@ -377,7 +413,7 @@ export default function OuvidApp() {
     try {
       await addDoc(collection(db, "manifestacoes", selectedManifestation.id, "comments"), {
         text: newComment,
-        user: user.email,
+        user: getUserDisplay(user.email), 
         createdAt: serverTimestamp(),
         dateString: new Date().toLocaleString('pt-BR')
       });
@@ -391,7 +427,7 @@ export default function OuvidApp() {
       const timelineEvent: TimelineEvent = {
         date: new Date().toLocaleString('pt-BR'),
         action: `Status alterado para ${newStatus}`,
-        user: user.email
+        user: getUserDisplay(user.email)
       };
       await updateDoc(doc(db, "manifestacoes", selectedManifestation.id), {
         status: newStatus,
@@ -441,7 +477,7 @@ export default function OuvidApp() {
       const timelineInitial: TimelineEvent = {
         date: new Date().toLocaleString('pt-BR'),
         action: 'Manifestação criada',
-        user: user.email
+        user: getUserDisplay(user.email)
       };
       await addDoc(collection(db, "manifestacoes"), {
         ...formData,
@@ -484,18 +520,10 @@ export default function OuvidApp() {
     { name: 'Fechado', value: stats.concluidas, color: '#22c55e' },
   ].filter(d => d.value > 0);
 
-  // Dados para o Gráfico de Prazos
-  const deadlineStats = {
-    ok: manifestations.filter(m => { const s = getDeadlineStatus(m.deadline, m.status); return s?.key === 'ok' }).length,
-    warning: manifestations.filter(m => { const s = getDeadlineStatus(m.deadline, m.status); return s?.key === 'warning' }).length,
-    expired: manifestations.filter(m => { const s = getDeadlineStatus(m.deadline, m.status); return s?.key === 'expired' }).length,
-  };
-
-  const pieDeadlineData = [
-    { name: 'No Prazo', value: deadlineStats.ok, color: '#22c55e' },
-    { name: 'Atenção', value: deadlineStats.warning, color: '#f97316' }, // Laranja
-    { name: 'Atrasado', value: deadlineStats.expired, color: '#ef4444' }, // Vermelho
-  ].filter(d => d.value > 0);
+  // Ordena as manifestações por prazo (data) para o widget de tabela
+  const sortedByDeadline = [...manifestations]
+    .filter(m => m.deadline && m.status !== 'Fechado') // Só mostra o que tem prazo e não tá fechado
+    .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
 
   const barData = [
     { name: 'SEI', value: manifestations.filter(m => m.origin === 'SEI').length },
@@ -523,13 +551,20 @@ export default function OuvidApp() {
             <FileText className="w-5 h-5" /> Manifestações
           </button>
           <div className="pt-4"><button onClick={() => setCurrentView('form')} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-xl shadow-lg active:scale-95 transition-all"><Plus className="w-5 h-5" /> Nova</button></div>
+          
+          {/* NOVA ABA CONFIGURAÇÕES */}
+          {userRole === 'admin' && (
+            <button onClick={() => setCurrentView('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all mt-2 ${currentView === 'settings' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}>
+              <Settings className="w-5 h-5" /> Configurações
+            </button>
+          )}
         </nav>
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <button onClick={toggleAdminMode} className={`w-full flex items-center gap-2 mb-2 font-semibold text-xs p-2 rounded transition-colors ${userRole === 'admin' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>
             {userRole === 'admin' ? <ShieldCheck className="w-3 h-3" /> : <UserCog className="w-3 h-3" />} 
             {userRole === 'admin' ? 'Perfil: Admin' : 'Perfil: Usuário'}
           </button>
-          <div className="flex items-center gap-2 text-sm text-gray-600 mb-4"><User className="w-4 h-4" /><span className="truncate w-32" title={user.email}>{user.email}</span></div>
+          <div className="flex items-center gap-2 text-sm text-gray-600 mb-4"><User className="w-4 h-4" /><span className="truncate w-32" title={getUserDisplay(user.email)}>{getUserDisplay(user.email)}</span></div>
           <button onClick={() => signOut(auth)} className="w-full flex items-center justify-center gap-2 text-red-600 hover:bg-red-50 p-2 rounded-lg text-sm font-medium"><LogOut className="w-4 h-4" /> Sair</button>
         </div>
       </aside>
@@ -554,7 +589,7 @@ export default function OuvidApp() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
                     {/* Gráfico de Status */}
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-80">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-96">
                       <h3 className="font-bold text-gray-700 mb-4">Status Geral</h3>
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
@@ -567,29 +602,54 @@ export default function OuvidApp() {
                       </ResponsiveContainer>
                     </div>
 
-                    {/* NOVO GRÁFICO DE PRAZOS (SLA) */}
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-80">
-                      <h3 className="font-bold text-gray-700 mb-4">Prazos (SLA)</h3>
-                      {pieDeadlineData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie data={pieDeadlineData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                              {pieDeadlineData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                            </Pie>
-                            <RechartsTooltip />
-                            <Legend />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="h-full flex items-center justify-center text-gray-400 text-sm">Sem dados de prazo</div>
-                      )}
+                    {/* NOVA TABELA DE PRAZOS */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-96 flex flex-col">
+                      <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Clock className="w-4 h-4" /> Prazos a Vencer</h3>
+                      <div className="flex-1 overflow-y-auto pr-2">
+                        {sortedByDeadline.length > 0 ? (
+                          <table className="w-full text-sm text-left">
+                            <thead className="text-xs text-gray-500 uppercase bg-gray-50 sticky top-0">
+                              <tr>
+                                <th className="px-2 py-2">NUP</th>
+                                <th className="px-2 py-2">Vencimento</th>
+                                <th className="px-2 py-2">Resp.</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {sortedByDeadline.map((item) => {
+                                const status = getDeadlineStatus(item.deadline, item.status);
+                                return (
+                                  <tr key={item.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { setSelectedManifestation(item); setCurrentView('details'); }}>
+                                    <td className="px-2 py-3 font-medium truncate max-w-[80px]" title={item.nup}>{item.nup}</td>
+                                    <td className={`px-2 py-3 font-bold ${status?.color.split(' ')[1]}`}>
+                                      {new Date(item.deadline!).toLocaleDateString('pt-BR').slice(0,5)}
+                                    </td>
+                                    <td className="px-2 py-3 truncate max-w-[80px]" title={item.responsible}>{item.responsible}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <div className="h-full flex flex-col items-center justify-center text-gray-400 text-sm">
+                            <CheckCircle2 className="w-8 h-8 mb-2 text-green-200" />
+                            Tudo em dia!
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Gráfico de Origem */}
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-80">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-96">
                       <h3 className="font-bold text-gray-700 mb-4">Origem</h3>
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={barData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis /><RechartsTooltip /><Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} /></BarChart>
+                        <BarChart data={barData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis allowDecimals={false} /> 
+                          <RechartsTooltip />
+                          <Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={50} />
+                        </BarChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
@@ -598,7 +658,6 @@ export default function OuvidApp() {
             </div>
           )}
 
-          {/* (Restante das Views Lista, Detalhes e Form continuam iguais) */}
           {currentView === 'list' && (
             <div className="space-y-6 animate-in fade-in duration-300 w-full">
               <div className="flex justify-between items-center">
@@ -642,6 +701,41 @@ export default function OuvidApp() {
             </div>
           )}
 
+          {/* NOVA ABA CONFIGURAÇÕES */}
+          {currentView === 'settings' && (
+            <div className="space-y-6 animate-in fade-in duration-500 w-full">
+              <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Settings className="w-6 h-6" /> Configurações do Sistema</h2>
+              
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <h3 className="font-bold text-gray-800 mb-4">Usuários Cadastrados</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="text-xs text-gray-500 uppercase bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3">Usuário</th>
+                        <th className="px-4 py-3">Email</th>
+                        <th className="px-4 py-3">Função</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {systemUsers.map((sysUser) => (
+                        <tr key={sysUser.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 font-medium">{getUserDisplay(sysUser.email)}</td>
+                          <td className="px-4 py-3 text-gray-500">{sysUser.email}</td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${sysUser.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
+                              {sysUser.role.toUpperCase()}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
           {currentView === 'form' && (
             <div className="max-w-3xl mx-auto w-full">
               <h2 className="text-2xl font-bold mb-6">Nova Manifestação</h2>
@@ -654,9 +748,22 @@ export default function OuvidApp() {
                     <label className="text-xs text-gray-500 mb-1 block">Prazo Limite (SLA)</label>
                     <input type="date" className="w-full p-3 border rounded-lg" value={formData.deadline} onChange={e => setFormData({...formData, deadline: e.target.value})} />
                   </div>
+                  
+                  {/* NOVO SELECT DE RESPONSÁVEL */}
                   <div className="w-1/2">
                     <label className="text-xs text-gray-500 mb-1 block">Responsável</label>
-                    <input placeholder="Nome" className="w-full p-3 border rounded-lg" value={formData.responsible} onChange={e => setFormData({...formData, responsible: e.target.value})} />
+                    <select 
+                      className="w-full p-3 border rounded-lg bg-white" 
+                      value={formData.responsible} 
+                      onChange={e => setFormData({...formData, responsible: e.target.value})}
+                    >
+                      <option value="">Selecione...</option>
+                      {systemUsers.map(u => (
+                        <option key={u.id} value={getUserDisplay(u.email)}>
+                          {getUserDisplay(u.email)}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="w-full">
