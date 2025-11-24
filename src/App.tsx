@@ -29,8 +29,7 @@ import {
 } from 'lucide-react';
 
 // --- BIBLIOTECAS DE GRÁFICOS E PDF ---
-// Ajuste na importação para compatibilidade
-import { jsPDF } from 'jspdf';
+import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend,
@@ -110,7 +109,7 @@ interface Manifestation {
   responsible: string;
   status: string;
   date: string;
-  deadline?: string; 
+  deadline?: string;
   createdAt?: any;
   timeline?: TimelineEvent[];
 }
@@ -127,7 +126,7 @@ const getDeadlineStatus = (deadline?: string, status?: string) => {
   
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const deadlineDate = new Date(deadline + 'T00:00:00'); 
+  const deadlineDate = new Date(deadline + 'T00:00:00');
   
   const diffTime = deadlineDate.getTime() - today.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
