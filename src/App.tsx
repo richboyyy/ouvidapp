@@ -16,13 +16,15 @@ import {
   MessageSquare,
   Send,
   History,
+  FileDown,
   ChevronLeft,
   ShieldCheck,
   ChevronRight,
   AlertTriangle,
   UserCog,
   UserPlus,
-  Settings
+  Settings,
+  X
 } from 'lucide-react';
 
 // --- BIBLIOTECAS DE GRÁFICOS ---
@@ -310,6 +312,12 @@ export default function OuvidApp() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
+  // NOVOS ESTADOS PARA FILTROS AVANÇADOS
+  const [filterOrigin, setFilterOrigin] = useState('');
+  const [filterResponsible, setFilterResponsible] = useState('');
+  const [filterDeadlineStatus, setFilterDeadlineStatus] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]); 
 
   const [formData, setFormData] = useState({
@@ -397,6 +405,21 @@ export default function OuvidApp() {
 
   // --- ACTIONS ---
 
+  const handleChangeRole = async (userId: string, currentRole: string) => {
+    if (userRole !== 'admin') return;
+    if (!window.confirm(`Deseja alterar a função deste usuário para ${currentRole === 'admin' ? 'USER' : 'ADMIN'}?`)) return;
+    
+    const newRole = currentRole === 'admin' ? 'user' : 'admin';
+    try {
+      await updateDoc(doc(db, 'users', userId), { role: newRole });
+      setSystemUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      alert("Perfil alterado com sucesso!");
+    } catch (e) {
+      console.error("Erro ao alterar perfil:", e);
+      alert("Erro ao alterar perfil.");
+    }
+  };
+
   const handleAddComment = async () => {
     if (!newComment.trim() || !selectedManifestation) return;
     try {
@@ -481,6 +504,40 @@ export default function OuvidApp() {
     document.body.removeChild(link);
   };
 
+  // --- FILTRO MASTER ---
+  // Esta função filtra a lista principal baseada em TODOS os critérios (busca, origem, resp, prazo)
+  const getFilteredManifestations = () => {
+    return manifestations.filter(item => {
+      // Busca Texto
+      const matchesSearch = 
+        (item.nup?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+        (item.title?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+
+      // Filtro Origem
+      const matchesOrigin = filterOrigin ? item.origin === filterOrigin : true;
+
+      // Filtro Responsável
+      const matchesResponsible = filterResponsible ? item.responsible === filterResponsible : true;
+
+      // Filtro Prazo
+      let matchesDeadline = true;
+      if (filterDeadlineStatus) {
+        const status = getDeadlineStatus(item.deadline, item.status);
+        matchesDeadline = status?.key === filterDeadlineStatus;
+      }
+
+      return matchesSearch && matchesOrigin && matchesResponsible && matchesDeadline;
+    });
+  };
+
+  const filteredList = getFilteredManifestations();
+
+  // Ordena as manifestações FILTRADAS por prazo para a tabela de vencimentos
+  const sortedByDeadline = [...filteredList]
+    .filter(m => m.deadline && m.status !== 'Fechado') 
+    .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
+
+
   // --- CALCULOS ---
   const stats = useMemo(() => {
     return {
@@ -491,17 +548,17 @@ export default function OuvidApp() {
     };
   }, [manifestations]);
 
-  // Dados para o Gráfico de Status
   const pieData = [
     { name: 'Aberto', value: stats.abertas, color: '#ef4444' },
     { name: 'Andamento', value: stats.andamento, color: '#eab308' },
     { name: 'Fechado', value: stats.concluidas, color: '#22c55e' },
   ].filter(d => d.value > 0);
 
-  // Ordena as manifestações por prazo (data) para o widget de tabela
-  const sortedByDeadline = [...manifestations]
-    .filter(m => m.deadline && m.status !== 'Fechado') 
-    .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
+  const originData = [
+    { name: 'SEI', value: manifestations.filter(m => m.origin === 'SEI').length, color: '#3b82f6' }, 
+    { name: 'Fala.Br', value: manifestations.filter(m => m.origin === 'Fala.Br').length, color: '#22c55e' }, 
+    { name: 'SAT', value: manifestations.filter(m => m.origin === 'SAT').length, color: '#a855f7' }, 
+  ].filter(d => d.value > 0);
 
   const barData = [
     { name: 'SEI', value: manifestations.filter(m => m.origin === 'SEI').length },
@@ -530,7 +587,6 @@ export default function OuvidApp() {
           </button>
           <div className="pt-4"><button onClick={() => setCurrentView('form')} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-xl shadow-lg active:scale-95 transition-all"><Plus className="w-5 h-5" /> Nova</button></div>
           
-          {/* NOVA ABA CONFIGURAÇÕES */}
           {userRole === 'admin' && (
             <button onClick={() => setCurrentView('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all mt-2 ${currentView === 'settings' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}>
               <Settings className="w-5 h-5" /> Configurações
@@ -565,9 +621,9 @@ export default function OuvidApp() {
                     <StatCard title="Em Andamento" value={stats.andamento} icon={Clock} color="bg-yellow-500" />
                     <StatCard title="Concluídas" value={stats.concluidas} icon={CheckCircle2} color="bg-green-500" />
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-                    {/* Gráfico de Status */}
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-96">
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-80">
                       <h3 className="font-bold text-gray-700 mb-4">Status Geral</h3>
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
@@ -575,60 +631,90 @@ export default function OuvidApp() {
                             {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                           </Pie>
                           <RechartsTooltip />
-                          <Legend />
+                          <Legend verticalAlign="bottom" height={36} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
 
-                    {/* NOVA TABELA DE PRAZOS */}
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-96 flex flex-col">
-                      <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Clock className="w-4 h-4" /> Prazos a Vencer</h3>
-                      <div className="flex-1 overflow-y-auto pr-2">
-                        {sortedByDeadline.length > 0 ? (
-                          <table className="w-full text-sm text-left">
-                            <thead className="text-xs text-gray-500 uppercase bg-gray-50 sticky top-0">
-                              <tr>
-                                <th className="px-2 py-2">NUP</th>
-                                <th className="px-2 py-2">Vencimento</th>
-                                <th className="px-2 py-2">Resp.</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {sortedByDeadline.map((item) => {
-                                const status = getDeadlineStatus(item.deadline, item.status);
-                                return (
-                                  <tr key={item.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { setSelectedManifestation(item); setCurrentView('details'); }}>
-                                    <td className="px-2 py-3 font-medium truncate max-w-[80px]" title={item.nup}>{item.nup}</td>
-                                    <td className={`px-2 py-3 font-bold ${status?.color.split(' ')[1]}`}>
-                                      {new Date(item.deadline!).toLocaleDateString('pt-BR').slice(0,5)}
-                                    </td>
-                                    <td className="px-2 py-3 truncate max-w-[80px]" title={item.responsible}>{item.responsible}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        ) : (
-                          <div className="h-full flex flex-col items-center justify-center text-gray-400 text-sm">
-                            <CheckCircle2 className="w-8 h-8 mb-2 text-green-200" />
-                            Tudo em dia!
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Gráfico de Origem */}
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-96">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-80">
                       <h3 className="font-bold text-gray-700 mb-4">Origem</h3>
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={barData}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="name" />
-                          <YAxis allowDecimals={false} /> 
+                        <PieChart>
+                          <Pie data={originData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                            {originData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                          </Pie>
                           <RechartsTooltip />
-                          <Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={50} />
-                        </BarChart>
+                          <Legend verticalAlign="bottom" height={36} />
+                        </PieChart>
                       </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 w-full">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-gray-700 flex items-center gap-2"><Clock className="w-4 h-4" /> Prazos a Vencer (Prioridade)</h3>
+                        
+                        {/* FILTROS NA TABELA DO DASHBOARD */}
+                        <div className="flex gap-2">
+                            <select 
+                                className="text-xs border rounded p-1 bg-gray-50"
+                                value={filterDeadlineStatus}
+                                onChange={(e) => setFilterDeadlineStatus(e.target.value)}
+                            >
+                                <option value="">Todos Prazos</option>
+                                <option value="expired">Atrasados</option>
+                                <option value="warning">Atenção</option>
+                                <option value="ok">No Prazo</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                      {sortedByDeadline.length > 0 ? (
+                        <table className="w-full text-sm text-left">
+                          <thead className="text-xs text-gray-500 uppercase bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3">Status Prazo</th>
+                              <th className="px-4 py-3">NUP</th>
+                              <th className="px-4 py-3">Título</th>
+                              <th className="px-4 py-3">Origem</th>
+                              <th className="px-4 py-3">Status</th>
+                              <th className="px-4 py-3">Vencimento</th>
+                              <th className="px-4 py-3">Responsável</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {sortedByDeadline.map((item) => {
+                              const status = getDeadlineStatus(item.deadline, item.status);
+                              // Aplica o filtro de prazo visualmente aqui também
+                              if (filterDeadlineStatus && status?.key !== filterDeadlineStatus) return null;
+                              
+                              return (
+                                <tr key={item.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { setSelectedManifestation(item); setCurrentView('details'); }}>
+                                  <td className="px-4 py-3">
+                                     <span className={`flex items-center gap-1 px-2 py-1 rounded border w-fit ${status?.color.split(' ')[1]} bg-opacity-10 text-xs font-bold`}>
+                                        {status?.label}
+                                     </span>
+                                  </td>
+                                  <td className="px-4 py-3 font-medium">{item.nup}</td>
+                                  <td className="px-4 py-3 font-medium truncate max-w-xs">{item.title}</td>
+                                  <td className="px-4 py-3"><OriginBadge origin={item.origin} /></td>
+                                  <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
+                                  <td className="px-4 py-3 font-bold text-gray-700">
+                                    {new Date(item.deadline!).toLocaleDateString('pt-BR')}
+                                  </td>
+                                  <td className="px-4 py-3">{item.responsible}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="p-10 flex flex-col items-center justify-center text-gray-400 text-sm bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+                          <CheckCircle2 className="w-10 h-10 mb-2 text-green-200" />
+                          <p>Nenhum prazo pendente com este filtro.</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>
@@ -638,11 +724,14 @@ export default function OuvidApp() {
 
           {currentView === 'list' && (
             <div className="space-y-6 animate-in fade-in duration-300 w-full">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
                 <h2 className="text-2xl font-bold text-gray-900">Manifestações</h2>
                 <div className="flex gap-2">
-                  <button className="px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 flex items-center gap-2 shadow-sm font-medium">
-                     <Filter className="w-4 h-4" /> Filtros
+                  <button 
+                    onClick={() => setShowFilters(!showFilters)}
+                    className={`px-4 py-2 border text-gray-600 rounded-lg hover:bg-gray-50 flex items-center gap-2 shadow-sm font-medium ${showFilters ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200'}`}
+                   >
+                     <Filter className="w-4 h-4" /> Filtros {showFilters ? '(Ativo)' : ''}
                    </button>
                    <button onClick={exportToExcel} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm shadow-green-200 font-medium transition-colors">
                      <Download className="w-4 h-4" /> Excel
@@ -650,12 +739,67 @@ export default function OuvidApp() {
                   <button onClick={() => setCurrentView('form')} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium flex items-center gap-2"><Plus className="w-4 h-4" /> Nova</button>
                 </div>
               </div>
+
+              {/* ÁREA DE FILTROS AVANÇADOS */}
+              {showFilters && (
+                <div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4 animate-in slide-in-from-top-2">
+                    <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Origem</label>
+                        <select 
+                            className="w-full p-2 border rounded-lg text-sm"
+                            value={filterOrigin}
+                            onChange={e => setFilterOrigin(e.target.value)}
+                        >
+                            <option value="">Todas</option>
+                            <option value="SEI">SEI</option>
+                            <option value="Fala.Br">Fala.Br</option>
+                            <option value="SAT">SAT</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Responsável</label>
+                        <select 
+                            className="w-full p-2 border rounded-lg text-sm"
+                            value={filterResponsible}
+                            onChange={e => setFilterResponsible(e.target.value)}
+                        >
+                            <option value="">Todos</option>
+                            {systemUsers.map(u => (
+                                <option key={u.id} value={getUserDisplay(u.email)}>{getUserDisplay(u.email)}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Status do Prazo</label>
+                        <select 
+                            className="w-full p-2 border rounded-lg text-sm"
+                            value={filterDeadlineStatus}
+                            onChange={e => setFilterDeadlineStatus(e.target.value)}
+                        >
+                            <option value="">Todos</option>
+                            <option value="ok">No Prazo</option>
+                            <option value="warning">Atenção</option>
+                            <option value="expired">Atrasado</option>
+                        </select>
+                    </div>
+                    <div className="flex items-end">
+                         <button 
+                            onClick={() => { setFilterOrigin(''); setFilterResponsible(''); setFilterDeadlineStatus(''); setSearchTerm(''); }}
+                            className="w-full p-2 text-red-600 border border-red-200 bg-red-50 rounded-lg text-sm hover:bg-red-100 flex items-center justify-center gap-2"
+                         >
+                             <X className="w-4 h-4" /> Limpar Filtros
+                         </button>
+                    </div>
+                </div>
+              )}
+
               <div className="bg-white p-2 rounded-xl border border-gray-200 flex items-center gap-2 w-full">
                 <Search className="w-5 h-5 text-gray-400 ml-2" />
-                <input className="flex-1 p-2 outline-none text-gray-700 bg-transparent w-full" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                <input className="flex-1 p-2 outline-none text-gray-700 bg-transparent w-full" placeholder="Buscar por NUP ou Título..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
               </div>
+
               <div className="space-y-3 w-full">
-                {manifestations.filter(m => m.title.toLowerCase().includes(searchTerm.toLowerCase()) || m.nup.includes(searchTerm)).map((item) => {
+                {filteredList.map((item) => {
                   const deadlineInfo = getDeadlineStatus(item.deadline, item.status);
                   return (
                     <div key={item.id} onClick={() => { setSelectedManifestation(item); setCurrentView('details'); }} className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:border-indigo-500 cursor-pointer transition-all flex items-center gap-5 group w-full">
@@ -681,6 +825,9 @@ export default function OuvidApp() {
                     </div>
                   )
                 })}
+                {filteredList.length === 0 && (
+                    <div className="text-center py-10 text-gray-400">Nenhuma manifestação encontrada com estes filtros.</div>
+                )}
               </div>
             </div>
           )}
@@ -690,7 +837,7 @@ export default function OuvidApp() {
             <div className="space-y-6 animate-in fade-in duration-500 w-full">
               <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Settings className="w-6 h-6" /> Configurações do Sistema</h2>
               <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <h3 className="font-bold text-gray-800 mb-4">Usuários Cadastrados</h3>
+                <h3 className="font-bold text-gray-800 mb-4">Gerenciar Perfis</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left">
                     <thead className="text-xs text-gray-500 uppercase bg-gray-50">
@@ -698,6 +845,7 @@ export default function OuvidApp() {
                         <th className="px-4 py-3">Usuário</th>
                         <th className="px-4 py-3">Email</th>
                         <th className="px-4 py-3">Função</th>
+                        <th className="px-4 py-3">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -709,6 +857,15 @@ export default function OuvidApp() {
                             <span className={`px-2 py-1 rounded text-xs font-bold ${sysUser.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
                               {sysUser.role.toUpperCase()}
                             </span>
+                          </td>
+                          <td className="px-4 py-3">
+                              <button 
+                                onClick={() => handleChangeRole(sysUser.id, sysUser.role)}
+                                className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium text-xs bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors"
+                              >
+                                <UserCog className="w-3 h-3" />
+                                {sysUser.role === 'admin' ? 'Rebaixar' : 'Promover'}
+                              </button>
                           </td>
                         </tr>
                       ))}
@@ -765,7 +922,6 @@ export default function OuvidApp() {
 
           {currentView === 'details' && selectedManifestation && (
             <div className="h-full w-full flex flex-col overflow-hidden">
-              {/* Cabeçalho de Detalhes REUTILIZADO DA VERSÃO ANTERIOR para manter consistência */}
               <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shrink-0">
                 <div className="flex items-center gap-4">
                   <button onClick={() => setCurrentView('list')} className="p-2 hover:bg-gray-100 rounded-full">
