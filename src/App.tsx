@@ -16,7 +16,6 @@ import {
   MessageSquare,
   Send,
   History,
-  FileDown,
   ChevronLeft,
   ShieldCheck,
   ChevronRight,
@@ -29,8 +28,7 @@ import {
 
 // --- BIBLIOTECAS DE GRÁFICOS ---
 import { 
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid 
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend 
 } from 'recharts';
 
 // --- FIREBASE ---
@@ -247,7 +245,7 @@ const LoginScreen = () => {
                 value={username}
                 onChange={(e) => setUsername(e.target.value.replace(/\s/g, ''))}
                 className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="ex: ricardo"
+                placeholder="ex: Riam"
                 />
             </div>
           </div>
@@ -312,7 +310,6 @@ export default function OuvidApp() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // NOVOS ESTADOS PARA FILTROS AVANÇADOS
   const [filterOrigin, setFilterOrigin] = useState('');
   const [filterResponsible, setFilterResponsible] = useState('');
   const [filterDeadlineStatus, setFilterDeadlineStatus] = useState('');
@@ -487,14 +484,14 @@ export default function OuvidApp() {
       alert("Não há dados para exportar.");
       return;
     }
-    const headers = ["NUP,Título,Origem,Status,Responsável,Data,Descrição"];
+    const headers = ["NUP;Título;Origem;Status;Responsável;Data;Descrição"];
     const rows = manifestations.map(m => {
       const cleanDescription = (m.description || '').replace(/(\r\n|\n|\r)/gm, " ").replace(/"/g, '""');
-      const cleanTitle = (m.title || '').replace(/,/g, " ");
-      return `${m.nup},"${cleanTitle}",${m.origin},${m.status},${m.responsible},${m.date},"${cleanDescription}"`;
+      const cleanTitle = (m.title || '').replace(/(\r\n|\n|\r)/gm, " ").replace(/"/g, '""');
+      return `"${m.nup}";"${cleanTitle}";"${m.origin}";"${m.status}";"${m.responsible}";"${m.date}";"${cleanDescription}"`;
     });
-    const csvContent = [headers, ...rows].join("\n");
-    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const csvContent = "\ufeff" + [headers, ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
@@ -505,21 +502,15 @@ export default function OuvidApp() {
   };
 
   // --- FILTRO MASTER ---
-  // Esta função filtra a lista principal baseada em TODOS os critérios (busca, origem, resp, prazo)
   const getFilteredManifestations = () => {
     return manifestations.filter(item => {
-      // Busca Texto
       const matchesSearch = 
         (item.nup?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
         (item.title?.toLowerCase() || '').includes(searchTerm.toLowerCase());
 
-      // Filtro Origem
       const matchesOrigin = filterOrigin ? item.origin === filterOrigin : true;
-
-      // Filtro Responsável
       const matchesResponsible = filterResponsible ? item.responsible === filterResponsible : true;
 
-      // Filtro Prazo
       let matchesDeadline = true;
       if (filterDeadlineStatus) {
         const status = getDeadlineStatus(item.deadline, item.status);
@@ -532,7 +523,6 @@ export default function OuvidApp() {
 
   const filteredList = getFilteredManifestations();
 
-  // Ordena as manifestações FILTRADAS por prazo para a tabela de vencimentos
   const sortedByDeadline = [...filteredList]
     .filter(m => m.deadline && m.status !== 'Fechado') 
     .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
@@ -560,17 +550,10 @@ export default function OuvidApp() {
     { name: 'SAT', value: manifestations.filter(m => m.origin === 'SAT').length, color: '#a855f7' }, 
   ].filter(d => d.value > 0);
 
-  const barData = [
-    { name: 'SEI', value: manifestations.filter(m => m.origin === 'SEI').length },
-    { name: 'Fala.Br', value: manifestations.filter(m => m.origin === 'Fala.Br').length },
-    { name: 'SAT', value: manifestations.filter(m => m.origin === 'SAT').length },
-  ];
-
   if (authLoading) return <div className="h-screen w-screen flex items-center justify-center bg-slate-50">Carregando...</div>;
 
   if (!user) return <LoginScreen />;
 
-  // --- VIEW PRINCIPAL ---
   return (
     <div className="flex h-screen w-screen bg-slate-50 font-sans text-slate-800 overflow-hidden">
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col hidden md:flex shrink-0">
@@ -653,8 +636,6 @@ export default function OuvidApp() {
                   <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 w-full">
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="font-bold text-gray-700 flex items-center gap-2"><Clock className="w-4 h-4" /> Prazos a Vencer (Prioridade)</h3>
-                        
-                        {/* FILTROS NA TABELA DO DASHBOARD */}
                         <div className="flex gap-2">
                             <select 
                                 className="text-xs border rounded p-1 bg-gray-50"
@@ -686,7 +667,6 @@ export default function OuvidApp() {
                           <tbody className="divide-y divide-gray-100">
                             {sortedByDeadline.map((item) => {
                               const status = getDeadlineStatus(item.deadline, item.status);
-                              // Aplica o filtro de prazo visualmente aqui também
                               if (filterDeadlineStatus && status?.key !== filterDeadlineStatus) return null;
                               
                               return (
@@ -740,7 +720,6 @@ export default function OuvidApp() {
                 </div>
               </div>
 
-              {/* ÁREA DE FILTROS AVANÇADOS */}
               {showFilters && (
                 <div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4 animate-in slide-in-from-top-2">
                     <div>
@@ -832,7 +811,6 @@ export default function OuvidApp() {
             </div>
           )}
 
-          {/* NOVA ABA CONFIGURAÇÕES */}
           {currentView === 'settings' && (
             <div className="space-y-6 animate-in fade-in duration-500 w-full">
               <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Settings className="w-6 h-6" /> Configurações do Sistema</h2>
@@ -889,7 +867,6 @@ export default function OuvidApp() {
                     <input type="date" className="w-full p-3 border rounded-lg" value={formData.deadline} onChange={e => setFormData({...formData, deadline: e.target.value})} />
                   </div>
                   
-                  {/* NOVO SELECT DE RESPONSÁVEL */}
                   <div className="w-1/2">
                     <label className="text-xs text-gray-500 mb-1 block">Responsável</label>
                     <select 
