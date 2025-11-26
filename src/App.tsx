@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -6,9 +6,7 @@ import {
   Search, 
   Filter, 
   Download, 
-  Menu, 
   User, 
-  Paperclip,
   CheckCircle2,
   AlertCircle,
   Clock,
@@ -18,7 +16,6 @@ import {
   MessageSquare,
   Send,
   History,
-  FileDown,
   ChevronLeft,
   ShieldCheck,
   ChevronRight,
@@ -28,9 +25,7 @@ import {
   Settings
 } from 'lucide-react';
 
-// --- BIBLIOTECAS DE GRÁFICOS E PDF ---
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+// --- BIBLIOTECAS DE GRÁFICOS ---
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid 
@@ -431,39 +426,6 @@ export default function OuvidApp() {
     } catch (e) { console.error(e); }
   };
 
-  const generatePDF = () => {
-    if (!selectedManifestation) return;
-    const doc = new jsPDF();
-    doc.setFontSize(20);
-    doc.setTextColor(79, 70, 229); 
-    doc.text("Relatório de Manifestação", 14, 22);
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
-    doc.setDrawColor(200);
-    doc.line(14, 40, 196, 40);
-
-    const data = [
-      ["NUP", selectedManifestation.nup],
-      ["Título", selectedManifestation.title],
-      ["Prazo Limite", selectedManifestation.deadline ? new Date(selectedManifestation.deadline).toLocaleDateString('pt-BR') : "Não definido"],
-      ["Status", selectedManifestation.status],
-      ["Responsável", selectedManifestation.responsible],
-    ];
-
-    autoTable(doc, {
-      startY: 45,
-      head: [['Campo', 'Valor']],
-      body: data,
-      theme: 'striped',
-      headStyles: { fillColor: [79, 70, 229] }
-    });
-
-    const splitDescription = doc.splitTextToSize(selectedManifestation.description, 180);
-    doc.text(splitDescription, 14, (doc as any).lastAutoTable.finalY + 22);
-    doc.save(`Relatorio_${selectedManifestation.nup}.pdf`);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!db) return;
@@ -520,19 +482,23 @@ export default function OuvidApp() {
   };
 
   // --- CALCULOS ---
-  const stats = {
-    total: manifestations.length,
-    abertas: manifestations.filter(m => m.status === 'Aberto').length,
-    andamento: manifestations.filter(m => m.status === 'Em Andamento').length,
-    concluidas: manifestations.filter(m => m.status === 'Fechado').length,
-  };
+  const stats = useMemo(() => {
+    return {
+      total: manifestations.length,
+      abertas: manifestations.filter(m => m.status === 'Aberto').length,
+      andamento: manifestations.filter(m => m.status === 'Em Andamento').length,
+      concluidas: manifestations.filter(m => m.status === 'Fechado').length,
+    };
+  }, [manifestations]);
 
+  // Dados para o Gráfico de Status
   const pieData = [
     { name: 'Aberto', value: stats.abertas, color: '#ef4444' },
     { name: 'Andamento', value: stats.andamento, color: '#eab308' },
     { name: 'Fechado', value: stats.concluidas, color: '#22c55e' },
   ].filter(d => d.value > 0);
 
+  // Ordena as manifestações por prazo (data) para o widget de tabela
   const sortedByDeadline = [...manifestations]
     .filter(m => m.deadline && m.status !== 'Fechado') 
     .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
@@ -564,6 +530,7 @@ export default function OuvidApp() {
           </button>
           <div className="pt-4"><button onClick={() => setCurrentView('form')} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-xl shadow-lg active:scale-95 transition-all"><Plus className="w-5 h-5" /> Nova</button></div>
           
+          {/* NOVA ABA CONFIGURAÇÕES */}
           {userRole === 'admin' && (
             <button onClick={() => setCurrentView('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all mt-2 ${currentView === 'settings' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}>
               <Settings className="w-5 h-5" /> Configurações
@@ -599,6 +566,7 @@ export default function OuvidApp() {
                     <StatCard title="Concluídas" value={stats.concluidas} icon={CheckCircle2} color="bg-green-500" />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+                    {/* Gráfico de Status */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-96">
                       <h3 className="font-bold text-gray-700 mb-4">Status Geral</h3>
                       <ResponsiveContainer width="100%" height="100%">
@@ -612,6 +580,7 @@ export default function OuvidApp() {
                       </ResponsiveContainer>
                     </div>
 
+                    {/* NOVA TABELA DE PRAZOS */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-96 flex flex-col">
                       <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Clock className="w-4 h-4" /> Prazos a Vencer</h3>
                       <div className="flex-1 overflow-y-auto pr-2">
@@ -648,6 +617,7 @@ export default function OuvidApp() {
                       </div>
                     </div>
 
+                    {/* Gráfico de Origem */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-96">
                       <h3 className="font-bold text-gray-700 mb-4">Origem</h3>
                       <ResponsiveContainer width="100%" height="100%">
@@ -715,6 +685,7 @@ export default function OuvidApp() {
             </div>
           )}
 
+          {/* NOVA ABA CONFIGURAÇÕES */}
           {currentView === 'settings' && (
             <div className="space-y-6 animate-in fade-in duration-500 w-full">
               <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Settings className="w-6 h-6" /> Configurações do Sistema</h2>
@@ -760,9 +731,15 @@ export default function OuvidApp() {
                     <label className="text-xs text-gray-500 mb-1 block">Prazo Limite (SLA)</label>
                     <input type="date" className="w-full p-3 border rounded-lg" value={formData.deadline} onChange={e => setFormData({...formData, deadline: e.target.value})} />
                   </div>
+                  
+                  {/* NOVO SELECT DE RESPONSÁVEL */}
                   <div className="w-1/2">
                     <label className="text-xs text-gray-500 mb-1 block">Responsável</label>
-                    <select className="w-full p-3 border rounded-lg bg-white" value={formData.responsible} onChange={e => setFormData({...formData, responsible: e.target.value})}>
+                    <select 
+                      className="w-full p-3 border rounded-lg bg-white" 
+                      value={formData.responsible} 
+                      onChange={e => setFormData({...formData, responsible: e.target.value})}
+                    >
                       <option value="">Selecione...</option>
                       {systemUsers.map(u => (
                         <option key={u.id} value={getUserDisplay(u.email)}>
@@ -788,6 +765,7 @@ export default function OuvidApp() {
 
           {currentView === 'details' && selectedManifestation && (
             <div className="h-full w-full flex flex-col overflow-hidden">
+              {/* Cabeçalho de Detalhes REUTILIZADO DA VERSÃO ANTERIOR para manter consistência */}
               <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shrink-0">
                 <div className="flex items-center gap-4">
                   <button onClick={() => setCurrentView('list')} className="p-2 hover:bg-gray-100 rounded-full">
@@ -808,9 +786,6 @@ export default function OuvidApp() {
                     </div>
                   </div>
                 </div>
-                <button onClick={generatePDF} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium">
-                  <FileDown className="w-4 h-4" /> PDF
-                </button>
               </div>
 
               <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
