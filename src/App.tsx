@@ -218,7 +218,7 @@ const LoginScreen = () => {
       console.error(err);
       if (err.code === 'auth/email-already-in-use') setError('Este usuário já existe.');
       else if (err.code === 'auth/weak-password') setError('A senha deve ter pelo menos 6 caracteres.');
-      else if (err.code === 'auth/invalid-email') setError('Nome de usuário inválido.');
+      else if (err.code === 'auth/invalid-email') setError('Nome de usuário inválido');
       else setError('Usuário ou senha incorretos.');
     }
     setLoading(false);
