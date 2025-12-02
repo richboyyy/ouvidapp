@@ -16,7 +16,6 @@ import {
   MessageSquare,
   Send,
   History,
-  FileDown,
   ChevronLeft,
   ShieldCheck,
   ChevronRight,
@@ -25,14 +24,12 @@ import {
   UserPlus,
   Settings,
   X,
-  Edit,
-  Mail
+  Edit
 } from 'lucide-react';
 
 // --- BIBLIOTECAS DE GRÁFICOS ---
 import { 
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid 
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend 
 } from 'recharts';
 
 // --- FIREBASE ---
@@ -218,7 +215,7 @@ const LoginScreen = () => {
       console.error(err);
       if (err.code === 'auth/email-already-in-use') setError('Este usuário já existe.');
       else if (err.code === 'auth/weak-password') setError('A senha deve ter pelo menos 6 caracteres.');
-      else if (err.code === 'auth/invalid-email') setError('Nome de usuário inválido');
+      else if (err.code === 'auth/invalid-email') setError('Nome de usuário inválido.');
       else setError('Usuário ou senha incorretos.');
     }
     setLoading(false);
@@ -232,10 +229,10 @@ const LoginScreen = () => {
             <Lock className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-800">
-            {isRegistering ? 'Criar Usuário' : 'Acesso OuvidApp'}
+            {isRegistering ? 'Criar Nova Conta' : 'Acesso OuvidApp'}
           </h1>
           <p className="text-gray-500 text-center mt-2">
-            {isRegistering ? 'Crie seu usuário' : 'Entre com seu usuário e senha'}
+            {isRegistering ? 'Crie seu usuário para acessar' : 'Entre com seu usuário e senha'}
           </p>
         </div>
 
@@ -592,7 +589,7 @@ export default function OuvidApp() {
     { name: 'SEI', value: manifestations.filter(m => m.origin === 'SEI').length, color: '#3b82f6' }, 
     { name: 'Fala.Br', value: manifestations.filter(m => m.origin === 'Fala.Br').length, color: '#22c55e' }, 
     { name: 'SAT', value: manifestations.filter(m => m.origin === 'SAT').length, color: '#a855f7' },
-    { name: 'E-mail', value: manifestations.filter(m => m.origin === 'E-mail').length, color: '#f97316' }, // NOVA ORIGEM
+    { name: 'E-mail', value: manifestations.filter(m => m.origin === 'E-mail').length, color: '#f97316' }, 
   ].filter(d => d.value > 0);
 
 
@@ -771,6 +768,9 @@ export default function OuvidApp() {
                           <tbody className="divide-y divide-gray-100">
                             {sortedByDeadline.map((item) => {
                               const status = getDeadlineStatus(item.deadline, item.status);
+                              // Aplica o filtro de prazo visualmente aqui também
+                              if (filterDeadlineStatus && status?.key !== filterDeadlineStatus) return null;
+                              
                               return (
                                 <tr key={item.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { setSelectedManifestation(item); setCurrentView('details'); }}>
                                   <td className="px-4 py-3">
@@ -794,7 +794,7 @@ export default function OuvidApp() {
                       ) : (
                         <div className="p-10 flex flex-col items-center justify-center text-gray-400 text-sm bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
                           <CheckCircle2 className="w-10 h-10 mb-2 text-green-200" />
-                          <p>Parabéns! Não há prazos pendentes para estes filtros.</p>
+                          <p>Nenhum prazo pendente com este filtro.</p>
                         </div>
                       )}
                     </div>
@@ -899,6 +899,11 @@ export default function OuvidApp() {
                         </div>
                         <h3 className="text-gray-800 font-medium truncate">{item.title}</h3>
                       </div>
+                      {userRole === 'admin' && (
+                        <button onClick={(e) => handleDelete(item.id, e)} className="p-2 rounded-full text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors" title="Excluir">
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
                       <ChevronRight className="text-gray-400 group-hover:text-indigo-600 shrink-0" />
                     </div>
                   )
@@ -999,6 +1004,7 @@ export default function OuvidApp() {
 
           {currentView === 'details' && selectedManifestation && (
             <div className="h-full w-full flex flex-col overflow-hidden">
+              {/* Cabeçalho de Detalhes REUTILIZADO DA VERSÃO ANTERIOR para manter consistência */}
               <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shrink-0">
                 <div className="flex items-center gap-4">
                   <button onClick={() => setCurrentView('list')} className="p-2 hover:bg-gray-100 rounded-full">
