@@ -16,6 +16,7 @@ import {
   MessageSquare,
   Send,
   History,
+  FileDown,
   ChevronLeft,
   ShieldCheck,
   ChevronRight,
@@ -23,12 +24,15 @@ import {
   UserCog,
   UserPlus,
   Settings,
-  X
+  X,
+  Edit,
+  Mail
 } from 'lucide-react';
 
 // --- BIBLIOTECAS DE GRÁFICOS ---
 import { 
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend 
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid 
 } from 'recharts';
 
 // --- FIREBASE ---
@@ -153,6 +157,7 @@ const OriginBadge = ({ origin }: { origin?: string }) => {
     'SEI': 'bg-blue-50 text-blue-600 border border-blue-200',
     'Fala.Br': 'bg-green-50 text-green-600 border border-green-200',
     'SAT': 'bg-purple-50 text-purple-600 border border-purple-200',
+    'E-mail': 'bg-orange-50 text-orange-600 border border-orange-200',
   };
   return (
     <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${styles[origin || ''] || 'bg-gray-100'}`}>
@@ -227,10 +232,10 @@ const LoginScreen = () => {
             <Lock className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-800">
-            {isRegistering ? 'Criar Nova Conta' : 'Acesso OuvidApp'}
+            {isRegistering ? 'Criar Usuário' : 'Acesso OuvidApp'}
           </h1>
           <p className="text-gray-500 text-center mt-2">
-            {isRegistering ? 'Crie seu usuário para acessar' : 'Entre com seu usuário e senha'}
+            {isRegistering ? 'Crie seu usuário' : 'Entre com seu usuário e senha'}
           </p>
         </div>
 
@@ -245,7 +250,7 @@ const LoginScreen = () => {
                 value={username}
                 onChange={(e) => setUsername(e.target.value.replace(/\s/g, ''))}
                 className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="ex: Riam"
+                placeholder=""
                 />
             </div>
           </div>
@@ -310,10 +315,14 @@ export default function OuvidApp() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Filtros
   const [filterOrigin, setFilterOrigin] = useState('');
   const [filterResponsible, setFilterResponsible] = useState('');
   const [filterDeadlineStatus, setFilterDeadlineStatus] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+
+  // Modo de Edição
+  const [isEditing, setIsEditing] = useState(false);
   
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]); 
 
@@ -348,14 +357,6 @@ export default function OuvidApp() {
       setAuthLoading(false);
     });
   }, []);
-
-  const toggleAdminMode = async () => {
-    if (!user) return;
-    const newRole = userRole === 'admin' ? 'user' : 'admin';
-    await updateDoc(doc(db, 'users', user.uid), { role: newRole });
-    setUserRole(newRole);
-    alert(`Perfil alterado para: ${newRole.toUpperCase()}`);
-  };
 
   // --- DATA FETCHING ---
   useEffect(() => {
@@ -446,24 +447,64 @@ export default function OuvidApp() {
     } catch (e) { console.error(e); }
   };
 
+  // -- EDIÇÃO DE MANIFESTAÇÃO --
+  const handleEditClick = () => {
+    if (!selectedManifestation) return;
+    setFormData({
+      nup: selectedManifestation.nup,
+      title: selectedManifestation.title,
+      description: selectedManifestation.description,
+      origin: selectedManifestation.origin,
+      responsible: selectedManifestation.responsible,
+      status: selectedManifestation.status,
+      deadline: selectedManifestation.deadline || ''
+    });
+    setIsEditing(true);
+    setCurrentView('form');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!db) return;
+    
     try {
-      const timelineInitial: TimelineEvent = {
-        date: new Date().toLocaleString('pt-BR'),
-        action: 'Manifestação criada',
-        user: getUserDisplay(user.email)
-      };
-      await addDoc(collection(db, "manifestacoes"), {
-        ...formData,
-        date: new Date().toLocaleDateString('pt-BR'),
-        createdAt: serverTimestamp(),
-        timeline: [timelineInitial]
-      });
+      if (isEditing && selectedManifestation) {
+        // ATUALIZAÇÃO
+        const timelineEvent: TimelineEvent = {
+            date: new Date().toLocaleString('pt-BR'),
+            action: 'Manifestação editada por admin',
+            user: getUserDisplay(user.email)
+        };
+
+        await updateDoc(doc(db, "manifestacoes", selectedManifestation.id), {
+            ...formData,
+            timeline: arrayUnion(timelineEvent)
+        });
+        alert("✅ Atualizado com sucesso!");
+        setIsEditing(false);
+        setSelectedManifestation(null);
+        setCurrentView('list');
+
+      } else {
+        // CRIAÇÃO
+        const timelineInitial: TimelineEvent = {
+            date: new Date().toLocaleString('pt-BR'),
+            action: 'Manifestação criada',
+            user: getUserDisplay(user.email)
+        };
+        await addDoc(collection(db, "manifestacoes"), {
+            ...formData,
+            date: new Date().toLocaleDateString('pt-BR'),
+            createdAt: serverTimestamp(),
+            timeline: [timelineInitial]
+        });
+        alert("✅ Criado com sucesso!");
+        setCurrentView('list');
+      }
+      
+      // Reset form
       setFormData({ nup: '', title: '', description: '', origin: 'SEI', responsible: '', status: 'Aberto', deadline: '' });
-      setCurrentView('list');
-      alert("✅ Criado com sucesso!"); 
+
     } catch (e) { alert("Erro ao salvar."); }
   };
 
@@ -523,6 +564,7 @@ export default function OuvidApp() {
 
   const filteredList = getFilteredManifestations();
 
+  // Ordena as manifestações FILTRADAS por prazo para a tabela de vencimentos
   const sortedByDeadline = [...filteredList]
     .filter(m => m.deadline && m.status !== 'Fechado') 
     .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
@@ -538,22 +580,27 @@ export default function OuvidApp() {
     };
   }, [manifestations]);
 
+  // Dados para o Gráfico de Status
   const pieData = [
     { name: 'Aberto', value: stats.abertas, color: '#ef4444' },
     { name: 'Andamento', value: stats.andamento, color: '#eab308' },
     { name: 'Fechado', value: stats.concluidas, color: '#22c55e' },
   ].filter(d => d.value > 0);
 
+  // Dados para o Gráfico de ORIGEM (AGORA EM PIZZA)
   const originData = [
     { name: 'SEI', value: manifestations.filter(m => m.origin === 'SEI').length, color: '#3b82f6' }, 
     { name: 'Fala.Br', value: manifestations.filter(m => m.origin === 'Fala.Br').length, color: '#22c55e' }, 
-    { name: 'SAT', value: manifestations.filter(m => m.origin === 'SAT').length, color: '#a855f7' }, 
+    { name: 'SAT', value: manifestations.filter(m => m.origin === 'SAT').length, color: '#a855f7' },
+    { name: 'E-mail', value: manifestations.filter(m => m.origin === 'E-mail').length, color: '#f97316' }, // NOVA ORIGEM
   ].filter(d => d.value > 0);
+
 
   if (authLoading) return <div className="h-screen w-screen flex items-center justify-center bg-slate-50">Carregando...</div>;
 
   if (!user) return <LoginScreen />;
 
+  // --- VIEW PRINCIPAL ---
   return (
     <div className="flex h-screen w-screen bg-slate-50 font-sans text-slate-800 overflow-hidden">
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col hidden md:flex shrink-0">
@@ -568,8 +615,9 @@ export default function OuvidApp() {
           <button onClick={() => setCurrentView('list')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${currentView === 'list' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}>
             <FileText className="w-5 h-5" /> Manifestações
           </button>
-          <div className="pt-4"><button onClick={() => setCurrentView('form')} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-xl shadow-lg active:scale-95 transition-all"><Plus className="w-5 h-5" /> Nova</button></div>
+          <div className="pt-4"><button onClick={() => { setIsEditing(false); setFormData({ nup: '', title: '', description: '', origin: 'SEI', responsible: '', status: 'Aberto', deadline: '' }); setCurrentView('form'); }} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-xl shadow-lg active:scale-95 transition-all"><Plus className="w-5 h-5" /> Nova</button></div>
           
+          {/* NOVA ABA CONFIGURAÇÕES */}
           {userRole === 'admin' && (
             <button onClick={() => setCurrentView('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all mt-2 ${currentView === 'settings' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}>
               <Settings className="w-5 h-5" /> Configurações
@@ -577,10 +625,10 @@ export default function OuvidApp() {
           )}
         </nav>
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
-          <button onClick={toggleAdminMode} className={`w-full flex items-center gap-2 mb-2 font-semibold text-xs p-2 rounded transition-colors ${userRole === 'admin' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>
+          <div className={`w-full flex items-center gap-2 mb-2 font-semibold text-xs p-2 rounded transition-colors ${userRole === 'admin' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
             {userRole === 'admin' ? <ShieldCheck className="w-3 h-3" /> : <UserCog className="w-3 h-3" />} 
             {userRole === 'admin' ? 'Perfil: Admin' : 'Perfil: Usuário'}
-          </button>
+          </div>
           <div className="flex items-center gap-2 text-sm text-gray-600 mb-4"><User className="w-4 h-4" /><span className="truncate w-32" title={getUserDisplay(user.email)}>{getUserDisplay(user.email)}</span></div>
           <button onClick={() => signOut(auth)} className="w-full flex items-center justify-center gap-2 text-red-600 hover:bg-red-50 p-2 rounded-lg text-sm font-medium"><LogOut className="w-4 h-4" /> Sair</button>
         </div>
@@ -595,7 +643,71 @@ export default function OuvidApp() {
 
           {currentView === 'dashboard' && (
             <div className="space-y-6 animate-in fade-in duration-500 w-full">
-              <h2 className="text-3xl font-bold text-gray-900">Dashboard Estratégico</h2>
+              <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+                 <h2 className="text-3xl font-bold text-gray-900">Dashboard Estratégico</h2>
+                 {/* BOTÃO DE FILTRO DO DASHBOARD */}
+                 <button 
+                    onClick={() => setShowFilters(!showFilters)}
+                    className={`px-4 py-2 border text-gray-600 rounded-lg hover:bg-gray-50 flex items-center gap-2 shadow-sm font-medium ${showFilters ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200'}`}
+                   >
+                     <Filter className="w-4 h-4" /> Filtros Globais {showFilters ? '(Ativo)' : ''}
+                 </button>
+              </div>
+
+              {/* ÁREA DE FILTROS (COMPARTILHADA COM O DASHBOARD AGORA) */}
+              {showFilters && (
+                <div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4 animate-in slide-in-from-top-2">
+                    <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Origem</label>
+                        <select 
+                            className="w-full p-2 border rounded-lg text-sm"
+                            value={filterOrigin}
+                            onChange={e => setFilterOrigin(e.target.value)}
+                        >
+                            <option value="">Todas</option>
+                            <option value="SEI">SEI</option>
+                            <option value="Fala.Br">Fala.Br</option>
+                            <option value="SAT">SAT</option>
+                            <option value="E-mail">E-mail</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Responsável</label>
+                        <select 
+                            className="w-full p-2 border rounded-lg text-sm"
+                            value={filterResponsible}
+                            onChange={e => setFilterResponsible(e.target.value)}
+                        >
+                            <option value="">Todos</option>
+                            {systemUsers.map(u => (
+                                <option key={u.id} value={getUserDisplay(u.email)}>{getUserDisplay(u.email)}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase block mb-1">Status do Prazo</label>
+                        <select 
+                            className="w-full p-2 border rounded-lg text-sm"
+                            value={filterDeadlineStatus}
+                            onChange={e => setFilterDeadlineStatus(e.target.value)}
+                        >
+                            <option value="">Todos</option>
+                            <option value="ok">No Prazo</option>
+                            <option value="warning">Atenção</option>
+                            <option value="expired">Atrasado</option>
+                        </select>
+                    </div>
+                    <div className="flex items-end">
+                         <button 
+                            onClick={() => { setFilterOrigin(''); setFilterResponsible(''); setFilterDeadlineStatus(''); setSearchTerm(''); }}
+                            className="w-full p-2 text-red-600 border border-red-200 bg-red-50 rounded-lg text-sm hover:bg-red-100 flex items-center justify-center gap-2"
+                         >
+                             <X className="w-4 h-4" /> Limpar Filtros
+                         </button>
+                    </div>
+                </div>
+              )}
+
               {loading ? <div className="text-center py-20">Carregando...</div> : (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full">
@@ -605,7 +717,9 @@ export default function OuvidApp() {
                     <StatCard title="Concluídas" value={stats.concluidas} icon={CheckCircle2} color="bg-green-500" />
                   </div>
                   
+                  {/* GRÁFICOS LADO A LADO */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+                    {/* Gráfico de Status */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-80">
                       <h3 className="font-bold text-gray-700 mb-4">Status Geral</h3>
                       <ResponsiveContainer width="100%" height="100%">
@@ -619,6 +733,7 @@ export default function OuvidApp() {
                       </ResponsiveContainer>
                     </div>
 
+                    {/* Gráfico de Origem (PIZZA) */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-80">
                       <h3 className="font-bold text-gray-700 mb-4">Origem</h3>
                       <ResponsiveContainer width="100%" height="100%">
@@ -633,21 +748,10 @@ export default function OuvidApp() {
                     </div>
                   </div>
 
+                  {/* TABELA DE PRAZOS EXPANDIDA (EMBAIXO DOS GRÁFICOS) */}
                   <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 w-full">
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="font-bold text-gray-700 flex items-center gap-2"><Clock className="w-4 h-4" /> Prazos a Vencer (Prioridade)</h3>
-                        <div className="flex gap-2">
-                            <select 
-                                className="text-xs border rounded p-1 bg-gray-50"
-                                value={filterDeadlineStatus}
-                                onChange={(e) => setFilterDeadlineStatus(e.target.value)}
-                            >
-                                <option value="">Todos Prazos</option>
-                                <option value="expired">Atrasados</option>
-                                <option value="warning">Atenção</option>
-                                <option value="ok">No Prazo</option>
-                            </select>
-                        </div>
                     </div>
                     
                     <div className="overflow-x-auto">
@@ -667,8 +771,6 @@ export default function OuvidApp() {
                           <tbody className="divide-y divide-gray-100">
                             {sortedByDeadline.map((item) => {
                               const status = getDeadlineStatus(item.deadline, item.status);
-                              if (filterDeadlineStatus && status?.key !== filterDeadlineStatus) return null;
-                              
                               return (
                                 <tr key={item.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { setSelectedManifestation(item); setCurrentView('details'); }}>
                                   <td className="px-4 py-3">
@@ -692,7 +794,7 @@ export default function OuvidApp() {
                       ) : (
                         <div className="p-10 flex flex-col items-center justify-center text-gray-400 text-sm bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
                           <CheckCircle2 className="w-10 h-10 mb-2 text-green-200" />
-                          <p>Nenhum prazo pendente com este filtro.</p>
+                          <p>Parabéns! Não há prazos pendentes para estes filtros.</p>
                         </div>
                       )}
                     </div>
@@ -716,10 +818,11 @@ export default function OuvidApp() {
                    <button onClick={exportToExcel} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm shadow-green-200 font-medium transition-colors">
                      <Download className="w-4 h-4" /> Excel
                    </button>
-                  <button onClick={() => setCurrentView('form')} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium flex items-center gap-2"><Plus className="w-4 h-4" /> Nova</button>
+                  <button onClick={() => { setIsEditing(false); setFormData({ nup: '', title: '', description: '', origin: 'SEI', responsible: '', status: 'Aberto', deadline: '' }); setCurrentView('form'); }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium flex items-center gap-2"><Plus className="w-4 h-4" /> Nova</button>
                 </div>
               </div>
 
+              {/* ÁREA DE FILTROS AVANÇADOS (REUTILIZADA) */}
               {showFilters && (
                 <div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4 animate-in slide-in-from-top-2">
                     <div>
@@ -733,6 +836,7 @@ export default function OuvidApp() {
                             <option value="SEI">SEI</option>
                             <option value="Fala.Br">Fala.Br</option>
                             <option value="SAT">SAT</option>
+                            <option value="E-mail">E-mail</option>
                         </select>
                     </div>
                     <div>
@@ -795,11 +899,6 @@ export default function OuvidApp() {
                         </div>
                         <h3 className="text-gray-800 font-medium truncate">{item.title}</h3>
                       </div>
-                      {userRole === 'admin' && (
-                        <button onClick={(e) => handleDelete(item.id, e)} className="p-2 rounded-full text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors" title="Excluir">
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      )}
                       <ChevronRight className="text-gray-400 group-hover:text-indigo-600 shrink-0" />
                     </div>
                   )
@@ -811,6 +910,7 @@ export default function OuvidApp() {
             </div>
           )}
 
+          {/* NOVA ABA CONFIGURAÇÕES */}
           {currentView === 'settings' && (
             <div className="space-y-6 animate-in fade-in duration-500 w-full">
               <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Settings className="w-6 h-6" /> Configurações do Sistema</h2>
@@ -856,7 +956,7 @@ export default function OuvidApp() {
 
           {currentView === 'form' && (
             <div className="max-w-3xl mx-auto w-full">
-              <h2 className="text-2xl font-bold mb-6">Nova Manifestação</h2>
+              <h2 className="text-2xl font-bold mb-6">{isEditing ? 'Editar Manifestação' : 'Nova Manifestação'}</h2>
               <form onSubmit={handleSubmit} className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 space-y-4">
                 <input required placeholder="NUP" className="w-full p-3 border rounded-lg" value={formData.nup} onChange={e => setFormData({...formData, nup: e.target.value})} />
                 <input required placeholder="Título" className="w-full p-3 border rounded-lg" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
@@ -886,7 +986,7 @@ export default function OuvidApp() {
                 <div className="w-full">
                     <label className="text-xs text-gray-500 mb-1 block">Origem</label>
                     <select className="w-full p-3 border rounded-lg" value={formData.origin} onChange={e => setFormData({...formData, origin: e.target.value})}>
-                      <option>SEI</option><option>Fala.Br</option><option>SAT</option>
+                      <option>SEI</option><option>Fala.Br</option><option>SAT</option><option>E-mail</option>
                     </select>
                 </div>
                 <div className="flex justify-end gap-2 pt-4">
@@ -919,6 +1019,16 @@ export default function OuvidApp() {
                     </div>
                   </div>
                 </div>
+                {userRole === 'admin' && (
+                  <div className="flex gap-2">
+                    <button onClick={handleEditClick} className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium border border-blue-200">
+                       <Edit className="w-4 h-4" /> Editar
+                    </button>
+                    <button onClick={(e) => { handleDelete(selectedManifestation.id, e); setCurrentView('list'); }} className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 font-medium border border-red-200">
+                       <Trash2 className="w-4 h-4" /> Excluir
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
